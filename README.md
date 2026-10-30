@@ -3,6 +3,19 @@
 输入一个网址，自动检查 SSL 证书、响应速度与安全配置，输出 **0–100 分** 的体检报告和中文改进建议。
 支持**历史记录**、**定时监控**、**JSON API** 与**报告导出**：把网址加入监控后，后台会按间隔自动体检，证书快过期时在页面顶部提醒。
 
+> 🚀 **在线体验：[site-doctor-utc8.onrender.com](https://site-doctor-utc8.onrender.com)**
+> 📖 **接口文档：[/docs](https://site-doctor-utc8.onrender.com/docs)**
+>
+>
+> ⏳ 免费实例 15 分钟无访问会休眠，首次打开需要等 **30–50 秒** 唤醒，之后访问很快。
+> 💾 免费实例没有持久磁盘，重新部署后历史记录会清空（演示用途，不影响功能体验）。
+
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?logo=fastapi&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-85%20passed-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+![Deploy](https://img.shields.io/badge/deploy-Render-46E3B7?logo=render&logoColor=white)
+
 > 个人项目 / 用于简历与面试展示。核心目标是：**小而完整、能真实运行、有可以讲的工程点**。
 > 项目分三版迭代：v1 基础诊断 → v2 数据持久化与后台调度 → v3 性能优化与可复用接口。
 
@@ -15,6 +28,18 @@
 | 历史记录 | 监控列表 |
 | --- | --- |
 | ![历史记录页](docs/screenshot-history.png) | ![监控列表页](docs/screenshot-monitors.png) |
+
+---
+
+## 项目速览
+
+| 指标 | 数值 |
+| --- | --- |
+| 核心代码 | 1146 行（`app/`） |
+| 测试代码 | 620 行，85 个用例全部通过 |
+| 迭代版本 | 3 个版本，9 次提交 |
+| 性能优化 | 并发化后总耗时降低 **1.48x**；缓存命中从 770ms → **0.02ms** |
+| 部署 | Render 云平台，线上可访问 |
 
 ---
 
@@ -50,6 +75,8 @@
 
 ## 快速开始
 
+### 本地运行
+
 ```bash
 cd site-doctor
 
@@ -68,6 +95,28 @@ Windows 下也可以直接双击 `run.bat` 启动。
 首次启动会自动在 `data/site_doctor.db` 建库，无需手动初始化。
 
 输入网址（可以不写 `https://`，会自动补全）即可看到报告。
+
+### 云端部署
+
+项目已适配 Render，仓库内提供 `render.yaml`（Blueprint 配置）与 `Procfile`。
+
+部署要点：
+
+1. 新建 **Web Service**，连接本仓库，分支选 `main`；
+2. **Build Command**：`pip install -r requirements.txt`
+3. **Start Command**：`python start.py`
+4. 选 **Free** 实例，Region 选 **Singapore**（离国内最近）。
+
+`start.py` 会读取平台注入的 `PORT` 环境变量并监听 `0.0.0.0`，这是云平台能正常转发流量的关键 ——
+直接把端口写死成 `8000`、或监听 `127.0.0.1`，外部访问会返回 502。
+
+数据库路径可通过环境变量 `SITE_DOCTOR_DB` 指定，方便以后挂载持久磁盘或换成云数据库：
+
+```bash
+SITE_DOCTOR_DB=/var/data/site_doctor.db python start.py
+```
+
+> 免费实例的限制：15 分钟无访问会休眠（唤醒约 30–50 秒）；没有持久磁盘，重新部署后数据会重置。
 
 > Windows 下如果 `--reload` 报 `WinError 5`，去掉 `--reload` 参数即可（改代码后手动重启）。
 
@@ -97,9 +146,19 @@ python benchmark.py --repeat 2   # 每个站点测 2 轮取平均
 
 ## JSON API
 
+线上地址（可直接在浏览器打开查看返回的 JSON）：
+
+```bash
+curl "https://site-doctor-utc8.onrender.com/api/check?url=https://www.baidu.com"
+```
+
+本地开发：
+
 ```bash
 curl "http://127.0.0.1:8000/api/check?url=https://www.baidu.com"
 ```
+
+> 💡 也可以打开 **[交互式接口文档 /docs](https://site-doctor-utc8.onrender.com/docs)**，点 `Try it out` 直接在页面上试调用。
 
 返回示例（节选）：
 
@@ -139,6 +198,7 @@ site-doctor/
 ├── static/
 │   ├── style.css
 │   └── favicon.svg
+├── docs/                 # README 用的界面截图
 ├── tests/
 │   ├── conftest.py       # 公用夹具（独立测试库）
 │   ├── test_checker.py
@@ -149,10 +209,13 @@ site-doctor/
 │   └── test_report.py    # (v3)
 ├── data/                 # SQLite 数据库（运行时生成，不入库）
 ├── benchmark.py          # 串行 vs 并发 性能对比（v3）
+├── start.py              # 生产环境启动入口（读取 PORT 环境变量）
+├── Procfile              # 云平台进程声明
+├── render.yaml           # Render Blueprint 部署配置
 ├── requirements.txt
 ├── pytest.ini
-└── run.bat
-```
+├── run.bat               # Windows 一键启动（本地开发）
+└── LICENSE               # MIT 开源协议
 
 分层思路：**checker 只负责「采集事实」，scoring 只负责「判断好坏」，storage 只管「存取」，monitor 只管「调度」**。每层都不关心其他层的细节，可以独立测试、独立修改。
 
