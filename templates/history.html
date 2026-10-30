@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1><a class="brand" href="/">🩺 Site Doctor</a></h1>
+      <p class="subtitle">历史记录</p>
+    </header>
+
+    <nav class="topnav">
+      <a href="/">诊断</a>
+      <a href="/history" class="active">历史记录</a>
+      <a href="/monitors">监控列表</a>
+    </nav>
+
+    {% include "_cert_alerts.html" %}
+
+    <form class="filter-form" method="get" action="/history">      <input type="text" name="url" value="{{ filter_url }}" placeholder="按网址过滤，留空看全部">
+      <button type="submit">筛选</button>
+      {% if filter_url %}<a class="btn-link" href="/history">清除筛选</a>{% endif %}
+    </form>
+
+    <p class="stats">共 <b>{{ total }}</b> 条诊断记录，当前显示最近 {{ records | length }} 条</p>
+
+    {% if records %}
+    <ul class="record-list">
+      {% for record in records %}
+      <li class="record-item">
+        <a class="record-main" href="/history/{{ record.id }}">
+          <span class="record-url">{{ record.url }}</span>
+          <span class="record-meta">{{ record.created_at }}</span>
+        </a>
+        <span class="record-side">
+          {% if record.delta is not none %}
+            {% if record.delta > 0 %}<span class="delta up">▲ {{ record.delta }}</span>
+            {% elif record.delta < 0 %}<span class="delta down">▼ {{ -record.delta }}</span>
+            {% else %}<span class="delta flat">—</span>{% endif %}
+          {% endif %}
+          <span class="score-badge {{ 'great' if record.score >= 90 else ('good' if record.score >= 75 else ('ok' if record.score >= 60 else 'bad')) }}">
+            {{ record.score }}
+          </span>
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state">
+      <p>还没有诊断记录。</p>
+      <p><a href="/">去诊断一个网址 →</a></p>
+    </div>
+    {% endif %}
+  </main>
+</body>
+</html>
