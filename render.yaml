@@ -1,0 +1,22 @@
+# Render 部署配置（Blueprint）
+# 有了这个文件，在 Render 上选 "New +" → "Blueprint" 选仓库即可，
+# 构建方式和启动命令会自动填好，不用手动敲。
+services:
+  - type: web
+    name: site-doctor
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python start.py
+    # 健康检查路径：服务起来后 Render 会请求这个地址确认活着
+    healthCheckPath: /
+    envVars:
+      # Python 版本，和本地开发保持一致
+      - key: PYTHON_VERSION
+        value: "3.13.5"
+      # 让 Python 输出不缓冲，日志能实时看到
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # 中文日志/输出用 UTF-8
+      - key: PYTHONIOENCODING
+        value: "utf-8"

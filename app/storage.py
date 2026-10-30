@@ -8,15 +8,21 @@
 """
 
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-# 数据库放在项目 data/ 目录下，便于整体备份/删除
+# 数据库位置：
+# - 本地默认放在项目 data/ 目录下；
+# - 云平台（如 Render）可以用环境变量 SITE_DOCTOR_DB 指定到挂载的持久磁盘上。
+#   Render 免费实例没有持久磁盘，重启会清空 —— 这是免费方案的已知取舍。
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "site_doctor.db"
+
+_env_db = os.environ.get("SITE_DOCTOR_DB")
+DB_PATH = Path(_env_db) if _env_db else (DATA_DIR / "site_doctor.db")
 
 
 @contextmanager
