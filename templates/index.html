@@ -4,14 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <main class="container">
     <header class="hero">
-      <h1>🩺 Site Doctor</h1>
+      <h1><a class="brand" href="/">🩺 Site Doctor</a></h1>
       <p class="subtitle">网站健康诊断工具 · 检查 SSL 证书、响应速度与安全配置</p>
     </header>
+
+    <nav class="topnav">
+      <a href="/" class="{{ 'active' if not history_id else '' }}">诊断</a>
+      <a href="/history">历史记录</a>
+      <a href="/monitors">监控列表</a>
+    </nav>
+
+    {% include "_cert_alerts.html" %}
 
     <form class="search-form" method="get" action="/">
       <input
@@ -42,11 +51,24 @@
     {% else %}{% set level = "bad" %}
     {% endif %}
 
+    {% if history_time %}
+    <p class="history-note">📅 这是 {{ history_time }} 的历史记录（#{{ history_id }}）</p>
+    {% endif %}
+
     <section class="result">
       <div class="score-card {{ level }}">
         <div class="score-value">{{ score }}</div>
         <div class="score-label">/ 100 · {{ result.grade }}</div>
         <div class="score-url">{{ result.report.url }}</div>
+      </div>
+
+      <div class="actions">
+        <form method="post" action="/monitors" class="inline-form">
+          <input type="hidden" name="url" value="{{ result.report.url }}">
+          <input type="hidden" name="interval_min" value="60">
+          <button type="submit" class="btn-secondary">➕ 加入监控（每 60 分钟）</button>
+        </form>
+        <a class="btn-link" href="/history?url={{ result.report.url | urlencode }}">查看该网址历史</a>
       </div>
 
       <h2>各项检查</h2>
@@ -81,6 +103,12 @@
       <p class="all-good">🎉 太棒了，没有发现需要改进的问题！</p>
       {% endif %}
     </section>
+    {% endif %}
+
+    {% if not result and not error %}
+    <p class="stats">
+      已累计诊断 <b>{{ total_checks }}</b> 次 · 监控中 <b>{{ monitor_count }}</b> 个网址
+    </p>
     {% endif %}
   </main>
 </body>
