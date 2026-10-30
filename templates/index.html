@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1>🩺 Site Doctor</h1>
+      <p class="subtitle">网站健康诊断工具 · 检查 SSL 证书、响应速度与安全配置</p>
+    </header>
+
+    <form class="search-form" method="get" action="/">
+      <input
+        type="text"
+        name="url"
+        value="{{ url_input }}"
+        placeholder="例如：https://www.baidu.com"
+        autocomplete="off"
+        required
+      >
+      <button type="submit">开始诊断</button>
+    </form>
+
+    {# ---------- 错误提示 ---------- #}
+    {% if error %}
+    <div class="alert alert-error">
+      <strong>⚠️ 无法诊断</strong>
+      <p>{{ error }}</p>
+    </div>
+    {% endif %}
+
+    {# ---------- 诊断结果 ---------- #}
+    {% if result %}
+    {% set score = result.score %}
+    {% if score >= 90 %}{% set level = "great" %}
+    {% elif score >= 75 %}{% set level = "good" %}
+    {% elif score >= 60 %}{% set level = "ok" %}
+    {% else %}{% set level = "bad" %}
+    {% endif %}
+
+    <section class="result">
+      <div class="score-card {{ level }}">
+        <div class="score-value">{{ score }}</div>
+        <div class="score-label">/ 100 · {{ result.grade }}</div>
+        <div class="score-url">{{ result.report.url }}</div>
+      </div>
+
+      <h2>各项检查</h2>
+      <div class="breakdown">
+        {% for item in result.breakdown %}
+        {% set ratio = (item.score / item.max * 100) | round(0, 'floor') | int if item.max else 0 %}
+        {% if ratio >= 80 %}{% set bar_level = "great" %}
+        {% elif ratio >= 50 %}{% set bar_level = "ok" %}
+        {% else %}{% set bar_level = "bad" %}
+        {% endif %}
+        <div class="breakdown-item">
+          <div class="breakdown-head">
+            <span class="breakdown-name">{{ item.name }}</span>
+            <span class="breakdown-score">{{ item.score }} / {{ item.max }}</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill {{ bar_level }}" style="width: {{ ratio }}%"></div>
+          </div>
+          <p class="breakdown-detail">{{ item.detail }}</p>
+        </div>
+        {% endfor %}
+      </div>
+
+      <h2>改进建议</h2>
+      {% if result.suggestions %}
+      <ul class="suggestions">
+        {% for advice in result.suggestions %}
+        <li>{{ advice }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="all-good">🎉 太棒了，没有发现需要改进的问题！</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>
