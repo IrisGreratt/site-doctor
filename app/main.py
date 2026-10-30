@@ -8,17 +8,20 @@ V2 新增：
 - 启动时拉起后台定时检查任务（见 app/monitor.py）
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app import storage
 from app.checker import InvalidUrlError, check_url, normalize_url
 from app.monitor import collect_cert_alerts, run_scheduler
+from app.report import build_report_html, report_filename
 from app.scoring import score_report
 
 # 项目根目录（site-doctor/），用来定位 templates 和 static
@@ -105,6 +108,73 @@ async def index(request: Request, url: str | None = None):
             context["error"] = f"诊断过程出现意外错误：{exc}"
 
     return _render(request, "index.html", context)
+
+
+@app.get("/api/check")
+async def api_check(url: str | None = None):
+    """JSON API：给外部程序调用的诊断接口。
+
+    示例：
+        GET /api/check?url=https://www.baidu.com
+
+    设计上刻意不落库 —— API 调用可能很频繁（比如脚本批量测），
+    写库会把「诊断历史」淹没掉。需要留痕的话手动访问网页版即可。
+    """
+    if not url or not url.strip():
+        raise HTTPException(status_code=400, detail="缺少 url 参数")
+
+    try:
+        # 诊断是同步阻塞的网络请求，丢到线程池避免挡住事件循环
+        result = await asyncio.to_thread(_diagnose, url)
+    except InvalidUrlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"诊断失败：{exc}")
+
+    report = result["report"]
+    return {
+        "url": report["url"],
+        "reached": report["reached"],
+        "status_code": report["status_code"],
+        "elapsed_ms": report["elapsed_ms"],
+        "from_cache": report.get("from_cache", False),
+        "ssl": report["ssl"],
+        "score": result["score"],
+        "grade": result["grade"],
+        "breakdown": result["breakdown"],
+        "suggestions": result["suggestions"],
+    }
+
+
+@app.get("/report")
+async def download_report(url: str | None = None):
+    """下载一份自包含的 HTML 体检报告。
+
+    报告本身是纯静态 HTML + 内嵌 CSS，不依赖服务器，
+    下载后可以直接双击打开、发给别人，或者当简历附件。
+    """
+    if not url or not url.strip():
+        raise HTTPException(status_code=400, detail="缺少 url 参数")
+
+    try:
+        result = await asyncio.to_thread(_diagnose, url)
+    except InvalidUrlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"生成报告失败：{exc}")
+
+    report = result["report"]
+    html = build_report_html(result, report["url"])
+    filename = report_filename(report["url"])
+
+    # Content-Disposition 用 filename*= 支持中文/特殊字符文件名
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"
+        },
+    )
 
 
 @app.get("/history", response_class=HTMLResponse)

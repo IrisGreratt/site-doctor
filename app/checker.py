@@ -3,16 +3,20 @@
 核心函数 check_url(url) 返回一个 dict（报告），供后续评分模块使用。
 设计原则：
 1. 永远不因为某个单项失败而整体崩溃 —— 单项失败写进 error，其他项照常检测；
-2. 网络请求必须有超时上限，不能让一个无响应的站点卡住整个服务。
+2. 网络请求必须有超时上限，不能让一个无响应的站点卡住整个服务；
+3. (v3) HTTP 请求与 SSL 检测并行执行 —— 两者互不依赖，串行纯属浪费时间。
 """
 
 import socket
 import ssl
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
+
+from app import cache
 
 
 # 请求超时上限（秒）：连接 + 读取各 5 秒
@@ -166,8 +170,51 @@ def check_headers(response_headers) -> dict:
     return results
 
 
-def check_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
+def _fetch_http(normalized: str, timeout: float) -> dict:
+    """发起 HTTP 请求，返回状态码、耗时、响应头和错误信息。
+
+    单独抽成函数是为了能被丢进线程池并发执行。
+    注意耗时只统计真正的请求时间，不含线程调度开销。
+    """
+    result = {
+        "reached": False,
+        "status_code": None,
+        "elapsed_ms": None,
+        "headers": {},
+        "final_url": None,
+        "error": None,
+    }
+
+    started = time.perf_counter()
+    try:
+        with httpx.Client(
+            timeout=httpx.Timeout(timeout),
+            follow_redirects=True,
+            headers={"User-Agent": USER_AGENT},
+        ) as client:
+            response = client.get(normalized)
+        result["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        result["status_code"] = response.status_code
+        result["reached"] = True
+        result["headers"] = check_headers(response.headers)
+        result["final_url"] = str(response.url)
+    except httpx.TimeoutException:
+        result["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        result["error"] = f"请求超时（超过 {timeout} 秒）"
+    except httpx.HTTPError as exc:
+        result["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        result["error"] = f"请求失败：{exc}"
+
+    return result
+
+
+def check_url(url: str, timeout: float = DEFAULT_TIMEOUT, use_cache: bool = True) -> dict:
     """诊断一个网址，返回结构化报告。
+
+    v3 改动：
+    1. HTTP 请求与 SSL 证书检测改为**并行**。两者都只依赖域名，彼此没有先后
+       关系，串行执行等于白白多等一倍时间；
+    2. 增加 TTL 缓存，同一网址 60 秒内直接复用上次结果（报告里带 from_cache 标记）。
 
     返回值结构：
     {
@@ -177,51 +224,49 @@ def check_url(url: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
         "elapsed_ms": 123.4,
         "ssl": {...},             # check_ssl 的结果；http 站点为 {"ok": False, "error": "非 HTTPS 站点"}
         "headers": {...},         # check_headers 的结果
-        "error": None             # 整体失败时的错误说明
+        "error": None,            # 整体失败时的错误说明
+        "from_cache": False       # 是否来自缓存
     }
     """
     normalized = normalize_url(url)
+
+    # 1) 先查缓存
+    if use_cache:
+        cached = cache.get(normalized)
+        if cached is not None:
+            cached["from_cache"] = True
+            return cached
+
     parsed = urlparse(normalized)
     is_https = parsed.scheme == "https"
+    need_ssl = is_https and bool(parsed.hostname)
+
+    # 2) 两个互不依赖的任务并行执行
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="check") as pool:
+        http_future = pool.submit(_fetch_http, normalized, timeout)
+        ssl_future = (
+            pool.submit(check_ssl, parsed.hostname, 443, timeout) if need_ssl else None
+        )
+
+        http_result = http_future.result()
+        ssl_result = ssl_future.result() if ssl_future else None
 
     report = {
         "url": normalized,
-        "reached": False,
-        "status_code": None,
-        "elapsed_ms": None,
-        "ssl": {"ok": False, "error": "非 HTTPS 站点，未启用证书"},
-        "headers": {},
-        "error": None,
+        "reached": http_result["reached"],
+        "status_code": http_result["status_code"],
+        "elapsed_ms": http_result["elapsed_ms"],
+        "ssl": ssl_result
+        if ssl_result is not None
+        else {"ok": False, "error": "非 HTTPS 站点，未启用证书"},
+        "headers": http_result["headers"],
+        "error": http_result["error"],
+        "final_url": http_result["final_url"],
+        "from_cache": False,
     }
 
-    # 1) HTTP 请求：测状态码与耗时
-    started = time.perf_counter()
-    request_failed = False
-    try:
-        with httpx.Client(
-            timeout=httpx.Timeout(timeout),
-            follow_redirects=True,
-            headers={"User-Agent": USER_AGENT},
-        ) as client:
-            response = client.get(normalized)
-        report["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        report["status_code"] = response.status_code
-        report["reached"] = True
-        report["headers"] = check_headers(response.headers)
-        report["final_url"] = str(response.url)
-    except httpx.TimeoutException:
-        report["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        report["error"] = f"请求超时（超过 {timeout} 秒）"
-        request_failed = True
-    except httpx.HTTPError as exc:
-        report["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 1)
-        report["error"] = f"请求失败：{exc}"
-        request_failed = True
-
-    # 2) SSL 证书：仅 HTTPS 站点检测。
-    # 注意：HTTP 请求失败时也要测一次证书 —— 域名可能只是 HTTP 层不通，
-    # 这样报告里不会出现「明明写了 https 却说非 HTTPS」的误导信息。
-    if is_https and parsed.hostname:
-        report["ssl"] = check_ssl(parsed.hostname, timeout=timeout)
+    # 3) 只缓存成功的结果
+    if use_cache and cache.is_cacheable(report):
+        cache.put(normalized, report)
 
     return report
