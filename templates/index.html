@@ -60,9 +60,13 @@
         <div class="score-value">{{ score }}</div>
         <div class="score-label">/ 100 · {{ result.grade }}</div>
         <div class="score-url">{{ result.report.url }}</div>
+        {% if result.report.from_cache %}
+        <div class="cache-badge">⚡ 来自缓存（60 秒内重复诊断直接复用）</div>
+        {% endif %}
       </div>
 
       <div class="actions">
+        <a class="btn-primary" href="/report?url={{ result.report.url | urlencode }}">⬇️ 下载报告</a>
         <form method="post" action="/monitors" class="inline-form">
           <input type="hidden" name="url" value="{{ result.report.url }}">
           <input type="hidden" name="interval_min" value="60">

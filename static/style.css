@@ -135,6 +135,18 @@ h1 {
   word-break: break-all;
 }
 
+/* ---------- 缓存标记（v3） ---------- */
+.cache-badge {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  color: #6d28d9;
+  background: #ede9fe;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+}
+
 /* ---------- 各项检查 ---------- */
 h2 {
   font-size: 1.15rem;
@@ -228,7 +240,6 @@ h2 {
 }
 
 /* ================= V2 新增 ================= */
-
 /* ---------- 品牌链接 ---------- */
 .brand {
   color: inherit;
@@ -326,6 +337,24 @@ h2 {
 
 .btn-secondary:hover {
   background: #dbeafe;
+}
+
+/* ---------- 主按钮（下载报告，v3） ---------- */
+.btn-primary {
+  padding: 9px 18px;
+  font-size: 0.9rem;
+  color: #fff;
+  background: #10b981;
+  border: 1px solid #059669;
+  border-radius: 8px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: inline-block;
+}
+
+.btn-primary:hover {
+  background: #059669;
 }
 
 .btn-link {
